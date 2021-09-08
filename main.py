@@ -110,11 +110,17 @@ class Url(db.Model):
         self.shortened_url = str(shortened)
 
 
-@app.route("/shorten/<url>/<shortened_version>")
+# @app.route("/shorten/<url>/<shortened_version>")
 @app.route("/shorten/<path:url>")
-def shorten_url(url, shortened_version=None):
+def shorten_url(url):
+    path_list = list(str(url).split("/"))
+    last_path = path_list[-1]
+    url = ''.join(path_list[:-1])
+    shortened_version = last_path[2:] if last_path[:2] == "==" else None
+
     if domain_validator(url) == "False":
         return "domain doesn't exist"
+
     if shortened_version is not None:
         shortened_version = str(shortened_version)
         does_exist = check_if_exists(shortened_version)
@@ -125,8 +131,8 @@ def shorten_url(url, shortened_version=None):
             key = shortened_version
     else:
         key = generate_random_key()
-        # while check_if_exists(key):
-        #     key = generate_random_key()
+        while check_if_exists(key):
+            key = generate_random_key()
         new_url = Url(url, key)
     print(new_url.url)
     print(new_url.shortened_url)
