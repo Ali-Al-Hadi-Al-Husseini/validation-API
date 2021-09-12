@@ -1,11 +1,12 @@
-from flask import Flask , redirect
+from flask import Flask, redirect
 from re import search
 import smtplib
 from os import popen
 import dns.resolver
 from flask_sqlalchemy import SQLAlchemy
-from string import ascii_letters , digits
+from string import ascii_letters, digits
 from random import choice
+from requests import get
 
 app = Flask(__name__)
 db = SQLAlchemy(app)
@@ -14,7 +15,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 def find_best_mx(result):
     mx_score   = [result[8], result[17],result[26],result[35],result[44]]
-    mx_records = [result[12],result[21],result[30],result[39], result[48]]
+    mx_records = [result[12], result[21],result[30],result[39], result[48]]
     smallest = float('inf')
     for i in range(len(mx_score)):
         if smallest > 1:
@@ -81,15 +82,28 @@ def card_validator(number):
 def domain_validator(domain_name):
     response = popen(f"ping {domain_name}").read()
 
-    if "Received = 4" in response:
+    if "Received = " in response:
         return "True"
     else:
         return "False"
 
 
-# @app.route("ssl/<ssl_cert>")
-# def ssl_validator(ssl_cert):
-#     pass
+@app.route("/ssl/<path:url>")
+def ssl_validator(url):
+    ssl_regex = "^(http://)"
+    if search(ssl_regex, url):
+        url = url[8:]
+    if url[-1] == '/':
+        url = url[:-1]
+    print(url)
+    if domain_validator(url) == "True":
+        try:
+            req = get("https://" + url)
+            print(req)
+            return "True"
+        except Exception:
+            return "False"
+    else: return "False"
 
 def generate_random_key():
     return ''.join(choice(ascii_letters + digits) for i in range(8))
@@ -113,9 +127,17 @@ class Url(db.Model):
 # @app.route("/shorten/<url>/<shortened_version>")
 @app.route("/shorten/<path:url>")
 def shorten_url(url):
+    http_regex =  "^(http://)"
+    https_regex = "^(https://)"
+
+    if search(http_regex, url):
+        url = url[11:]
+    if search(https_regex, url):
+        url = url[12:]
+
     path_list = list(str(url).split("/"))
     last_path = path_list[-1]
-    url = ''.join(path_list[:-1])
+    url = ''.join(path_list[:len(path_list) - 1]) if len(path_list) > 1 else ''.join(path_list[:])
     shortened_version = last_path[2:] if last_path[:2] == "==" else None
 
     if domain_validator(url) == "False":
@@ -143,7 +165,22 @@ def shorten_url(url):
 @app.route("/<key>")
 def visit_shortend(key):
     URL = Url.query.filter_by(shortened_url=str(key)).first()
-    return redirect("https://" + URL.url)
+
+    return redirect("http://" + URL.url)
+
+@app.route("/uszip/<zip_code>")
+def visit_uszip(zip_code):
+    us_zip_regex = "^[0-9]{5}(?:-[0-9]{4})?$"
+
+    if search(us_zip_regex, zip_code): return "True"
+    return "False"
+
+@app.route("/lbzip/<zip_code>")
+def visit_lbzip(zip_code):
+    us_zip_regex = "^1[0-9]{3}$"
+
+    if search(us_zip_regex, zip_code):return "True"
+    return "False"
 
 if __name__ == "__main__":
     db.create_all()
