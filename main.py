@@ -1,4 +1,4 @@
-from flask import Flask, redirect
+from flask import Flask, redirect, jsonify
 from re import search
 import smtplib
 from os import popen
@@ -29,27 +29,48 @@ def email_validator(email):
 
     if search(email_regex, email):
         domain_name = email.split('@')[1]
-        try:
-            records = dns.resolver.resolve(domain_name, 'MX')
-            mxRecord = records[0].exchange
-            mxRecord = str(mxRecord)
+        if _domain_validator(domain_name):
+            try:
+                records = dns.resolver.resolve(domain_name, 'MX')
+                mxRecord = records[0].exchange
+                mxRecord = str(mxRecord)
 
-            # SMTP lib setup
-            server = smtplib.SMTP()
+                # SMTP lib setup
+                server = smtplib.SMTP()
 
-            fromAddress = 'just_a_place_holder@domain.com'
+                fromAddress = 'just_a_place_holder@domain.com'
 
-            # SMTP Conversation
-            server.connect(mxRecord)
-            server.helo(server.local_hostname)  ### server.local_hostname(Get local server hostname)
-            server.mail(fromAddress)
-            code, message = server.rcpt(str(email))
-            server.quit()
-        finally:
-            return str(code == 250)
+                # SMTP Conversation
+                server.connect(mxRecord)
+                server.helo(server.local_hostname)  ### server.local_hostname(Get local server hostname)
+                server.mail(fromAddress)
+                code, message = server.rcpt(str(email))
+                server.quit()
+            finally:
+                result = "true" if (code == 250) else 'false'
 
+                return jsonify({
+                    'type': "email",
+                    "valid": result,
+                    "form": "true",
+                    "domain": "true"
+
+            })
+        else:
+            return jsonify({
+                'type': "email",
+                "valid": "false",
+                "form": "true",
+                "domain": "false"
+
+            })
     else:
-        return "False"
+        return jsonify({
+            'type': "email",
+            "vaild": "false",
+            "form": "false"
+
+        })
 
 
 def sum_of_num(num):
@@ -76,16 +97,35 @@ def card_validator(number):
 
         numbers_list[idx] = new_num
 
-    return str(sum(numbers_list) % 10 == 0)
+    result = "true" if sum(numbers_list) % 10 == 0 else "false"
+    return jsonify({
+        "type": "card",
+        "valid": result,
+    })
 
 @app.route("/domain/<domain_name>")
 def domain_validator(domain_name):
     response = popen(f"ping {domain_name}").read()
 
     if "Received = " in response:
-        return "True"
+        return jsonify({
+            "type": "domain",
+            "valid": "true"
+        })
     else:
-        return "False"
+        return jsonify({
+            "type": "domain",
+            "valid": "false"
+        })
+
+#for internal use only
+def _domain_validator(domain_name):
+    response = popen(f"ping {domain_name}").read()
+
+    if "Received = " in response:
+        return True
+    else:
+        return False
 
 
 @app.route("/ssl/<path:url>")
@@ -96,14 +136,27 @@ def ssl_validator(url):
     if url[-1] == '/':
         url = url[:-1]
     print(url)
-    if domain_validator(url) == "True":
+    if _domain_validator(url):
         try:
             req = get("https://" + url)
             print(req)
-            return "True"
+            return jsonify({
+                "type": "ssl",
+                "valid": "true",
+                "domain": "true"
+            })
+
         except Exception:
-            return "False"
-    else: return "False"
+            return jsonify({
+                "type": "ssl",
+                "valid": "false",
+                "domain": "true"
+            })
+    else: return jsonify({
+                "type": "ssl",
+                "valid": "false",
+                "domain": "false"
+            })
 
 def generate_random_key():
     return ''.join(choice(ascii_letters + digits) for i in range(8))
@@ -140,14 +193,22 @@ def shorten_url(url):
     url = ''.join(path_list[:len(path_list) - 1]) if len(path_list) > 1 else ''.join(path_list[:])
     shortened_version = last_path[2:] if last_path[:2] == "==" else None
 
-    if domain_validator(url) == "False":
-        return "domain doesn't exist"
+    if not _domain_validator(url):
+        return jsonify({
+            "domain": "false",
+            "shorten": "false",
+            "key": ""
+        })
 
     if shortened_version is not None:
         shortened_version = str(shortened_version)
         does_exist = check_if_exists(shortened_version)
         if does_exist:
-            return "chosen words already exists"
+            return jsonify({
+            "domain": "true",
+            "shorten": "false",
+            "key": ""
+        })
         else:
             new_url = Url(url, shortened_version)
             key = shortened_version
@@ -156,31 +217,51 @@ def shorten_url(url):
         while check_if_exists(key):
             key = generate_random_key()
         new_url = Url(url, key)
-    print(new_url.url)
-    print(new_url.shortened_url)
+
     db.session.add(new_url)
     db.session.commit()
-    return key
+    return jsonify({
+        "domain": "true",
+        "shorten": "true",
+        "key": key
+    })
 
 @app.route("/<key>")
 def visit_shortend(key):
     URL = Url.query.filter_by(shortened_url=str(key)).first()
-
     return redirect("http://" + URL.url)
 
 @app.route("/uszip/<zip_code>")
 def visit_uszip(zip_code):
     us_zip_regex = "^[0-9]{5}(?:-[0-9]{4})?$"
 
-    if search(us_zip_regex, zip_code): return "True"
-    return "False"
+    if search(us_zip_regex, zip_code):
+        return jsonify({
+            "type": "zip",
+            "country": "us",
+            "valid": "true"
+        })
+    return jsonify({
+            "type": "zip",
+            "country": "us",
+            "valid": "false"
+        })
 
 @app.route("/lbzip/<zip_code>")
 def visit_lbzip(zip_code):
     us_zip_regex = "^1[0-9]{3}$"
 
-    if search(us_zip_regex, zip_code):return "True"
-    return "False"
+    if search(us_zip_regex, zip_code):
+        return jsonify({
+            "type": "zip",
+            "country": "lb",
+            "valid": "true"
+        })
+    return jsonify({
+            "type": "zip",
+            "country": "lb",
+            "valid": "false"
+        })
 
 if __name__ == "__main__":
     db.create_all()
