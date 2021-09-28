@@ -1,4 +1,4 @@
-from flask import Flask, redirect, jsonify
+from flask import Flask, redirect, jsonify,request
 from re import search
 import smtplib
 from os import popen
@@ -23,13 +23,15 @@ def find_best_mx(result):
 
     return mx_records[smallest]
 
-@app.route('/email/<email>')
-def email_validator(email):
+@app.route('/email')
+def email_validator():
     email_regex = "^[a-zA-Z0-9]+[\._]?[a-zA-Z0-9]+[@]\w+[.]\w{2,3}$"
-
+    email = request.args.get('email')
+    print(email)
     if search(email_regex, email):
         domain_name = email.split('@')[1]
         if _domain_validator(domain_name):
+            code = 0
             try:
                 records = dns.resolver.resolve(domain_name, 'MX')
                 mxRecord = records[0].exchange
@@ -82,8 +84,9 @@ def sum_of_num(num):
 
 
 # using luhan algo
-@app.route("/card/<number>")
-def card_validator(number):
+@app.route("/card")
+def card_validator():
+    number = request.args.get("number")
     numbers_list = [int(num) for num in list(str(number))]
     numbers_list.reverse()
 
@@ -103,8 +106,9 @@ def card_validator(number):
         "valid": result,
     })
 
-@app.route("/domain/<domain_name>")
+@app.route("/domain")
 def domain_validator(domain_name):
+    domain_name = request.args.get("domain")
     response = popen(f"ping {domain_name}").read()
 
     if "Received = " in response:
@@ -128,8 +132,10 @@ def _domain_validator(domain_name):
         return False
 
 
-@app.route("/ssl/<path:url>")
-def ssl_validator(url):
+@app.route("/ssl/")
+def ssl_validator():
+    url = str(request.args.get("url"))
+
     ssl_regex = "^(http://)"
     if search(ssl_regex, url):
         url = url[8:]
@@ -178,8 +184,9 @@ class Url(db.Model):
 
 
 # @app.route("/shorten/<url>/<shortened_version>")
-@app.route("/shorten/<path:url>")
-def shorten_url(url):
+@app.route("/shorten")
+def shorten_url():
+    url = str(request.args.get("url"))
     http_regex =  "^(http://)"
     https_regex = "^(https://)"
 
@@ -231,8 +238,9 @@ def visit_shortend(key):
     URL = Url.query.filter_by(shortened_url=str(key)).first()
     return redirect("http://" + URL.url)
 
-@app.route("/uszip/<zip_code>")
-def visit_uszip(zip_code):
+@app.route("/uszip")
+def visit_uszip():
+    zip_code = str(request.args.get("zip"))
     us_zip_regex = "^[0-9]{5}(?:-[0-9]{4})?$"
 
     if search(us_zip_regex, zip_code):
@@ -247,8 +255,9 @@ def visit_uszip(zip_code):
             "valid": "false"
         })
 
-@app.route("/lbzip/<zip_code>")
-def visit_lbzip(zip_code):
+@app.route("/lbzip")
+def visit_lbzip():
+    zip_code = str(request.args.get("zip"))
     us_zip_regex = "^1[0-9]{3}$"
 
     if search(us_zip_regex, zip_code):
