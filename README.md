@@ -4,7 +4,7 @@
 ## General request
 ```python
 from requests import get 
-respsone = get(domain/route?argument=Input)# Card-Number
+respsone = get('domain/route?argument=Your-Input')# Card-Number
 ```
 
 | Description                       		| Route  | Argument | 
