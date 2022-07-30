@@ -1,39 +1,45 @@
-from flask import Flask, redirect, jsonify,request
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from re import search
-import smtplib
 from os import popen
-import dns.resolver
 from flask_sqlalchemy import SQLAlchemy
 from string import ascii_letters, digits
 from random import choice
 from requests import get
+import smtplib
+import dns.resolver
 
-app = Flask(__name__)
+
+app = FastAPI(__name__)
 db = SQLAlchemy(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///myDB.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+
 def find_best_mx(result):
+
     mx_score   = [result[8], result[17],result[26],result[35],result[44]]
     mx_records = [result[12], result[21],result[30],result[39], result[48]]
     smallest = float('inf')
+
     for i in range(len(mx_score)):
         if smallest > 1:
             smallest = i
 
     return mx_records[smallest]
 
-@app.route('/email')
-def email_validator():
+@app.get('/email')
+async def email_validator(email: str):
     email_regex = "^[a-zA-Z0-9]+[\._]?[a-zA-Z0-9]+[@]\w+[.]\w{2,3}$"
-    email = request.args.get('email')
-    print(email)
+
     if search(email_regex, email):
+
         domain_name = email.split('@')[1]
+
         if _domain_validator(domain_name):
             code = 0
             try:
-                records = dns.resolver.resolve(domain_name, 'MX')
+                records = await dns.resolver.resolve(domain_name, 'MX')
                 mxRecord = records[0].exchange
                 mxRecord = str(mxRecord)
 
@@ -43,15 +49,16 @@ def email_validator():
                 fromAddress = 'just_a_place_holder@domain.com'
 
                 # SMTP Conversation
-                server.connect(mxRecord)
-                server.helo(server.local_hostname)  ### server.local_hostname(Get local server hostname)
-                server.mail(fromAddress)
-                code, message = server.rcpt(str(email))
+                await server.connect(mxRecord)
+                await server.helo(server.local_hostname)  ### server.local_hostname(Get local server hostname)
+                await server.mail(fromAddress)
+                code, message = await server.rcpt(str(email))
                 server.quit()
             finally:
+
                 result = "true" if (code == 250) else 'false'
 
-                return jsonify({
+                return ({
                     'type': "email",
                     "valid": result,
                     "form": "true",
@@ -59,7 +66,7 @@ def email_validator():
 
             })
         else:
-            return jsonify({
+            return ({
                 'type': "email",
                 "valid": "false",
                 "form": "true",
@@ -67,7 +74,7 @@ def email_validator():
 
             })
     else:
-        return jsonify({
+        return ({
             'type': "email",
             "vaild": "false",
             "form": "false"
@@ -84,9 +91,9 @@ def sum_of_num(num):
 
 
 # using luhan algo
-@app.route("/card")
-def card_validator():
-    number = request.args.get("number")
+@app.get("/card")
+def card_validator(number: int):
+
     numbers_list = [int(num) for num in list(str(number))]
     numbers_list.reverse()
 
@@ -101,30 +108,32 @@ def card_validator():
         numbers_list[idx] = new_num
 
     result = "true" if sum(numbers_list) % 10 == 0 else "false"
-    return jsonify({
+
+    return ({
         "type": "card",
         "valid": result,
     })
 
-@app.route("/domain")
-def domain_validator(domain_name):
-    domain_name = request.args.get("domain")
-    response = popen(f"ping {domain_name}").read()
+@app.get("/domain")
+async def domain_validator(domain: str):
+
+    domain_name = domain
+    response = await popen(f"ping {domain_name}").read()
 
     if "Received = " in response:
-        return jsonify({
+        return ({
             "type": "domain",
             "valid": "true"
         })
     else:
-        return jsonify({
+        return ({
             "type": "domain",
             "valid": "false"
         })
 
 #for internal use only
-def _domain_validator(domain_name):
-    response = popen(f"ping {domain_name}").read()
+async def _domain_validator(domain_name):
+    response = await popen(f"ping {domain_name}").read()
 
     if "Received = " in response:
         return True
@@ -132,33 +141,33 @@ def _domain_validator(domain_name):
         return False
 
 
-@app.route("/ssl/")
-def ssl_validator():
-    url = str(request.args.get("url"))
+@app.get("/ssl/")
+async def ssl_validator(url: str):
 
     ssl_regex = "^(http://)"
     if search(ssl_regex, url):
         url = url[8:]
     if url[-1] == '/':
         url = url[:-1]
-    print(url)
-    if _domain_validator(url):
+
+ 
+    if await _domain_validator(url):
         try:
-            req = get("https://" + url)
-            print(req)
-            return jsonify({
+            req = await get("https://" + url)
+            
+            return ({
                 "type": "ssl",
                 "valid": "true",
                 "domain": "true"
             })
 
         except Exception:
-            return jsonify({
+            return ({
                 "type": "ssl",
                 "valid": "false",
                 "domain": "true"
             })
-    else: return jsonify({
+    else: return ({
                 "type": "ssl",
                 "valid": "false",
                 "domain": "false"
@@ -167,8 +176,8 @@ def ssl_validator():
 def generate_random_key():
     return ''.join(choice(ascii_letters + digits) for i in range(8))
 
-def check_if_exists(url):
-    url = Url.query.filter_by(shortened_url=url).first()
+async def check_if_exists(url):
+    url = await Url.query.filter_by(shortened_url=url).first()
     result = url != None
     return result
 
@@ -183,10 +192,10 @@ class Url(db.Model):
         self.shortened_url = str(shortened)
 
 
-# @app.route("/shorten/<url>/<shortened_version>")
-@app.route("/shorten")
-def shorten_url():
-    url = str(request.args.get("url"))
+# @app.get("/shorten/<url>/<shortened_version>")
+@app.get("/shorten")
+async def shorten_url(url: str):
+
     http_regex =  "^(http://)"
     https_regex = "^(https://)"
 
@@ -200,8 +209,8 @@ def shorten_url():
     url = ''.join(path_list[:len(path_list) - 1]) if len(path_list) > 1 else ''.join(path_list[:])
     shortened_version = last_path[2:] if last_path[:2] == "==" else None
 
-    if not _domain_validator(url):
-        return jsonify({
+    if not  await _domain_validator(url):
+        return ({
             "domain": "false",
             "shorten": "false",
             "key": ""
@@ -209,9 +218,9 @@ def shorten_url():
 
     if shortened_version is not None:
         shortened_version = str(shortened_version)
-        does_exist = check_if_exists(shortened_version)
+        does_exist = await check_if_exists(shortened_version)
         if does_exist:
-            return jsonify({
+            return ({
             "domain": "true",
             "shorten": "false",
             "key": ""
@@ -225,52 +234,55 @@ def shorten_url():
             key = generate_random_key()
         new_url = Url(url, key)
 
-    db.session.add(new_url)
-    db.session.commit()
-    return jsonify({
+    await db.session.add(new_url)
+    await db.session.commit()
+    return ({
         "domain": "true",
         "shorten": "true",
         "key": key
     })
 
-@app.route("/<key>")
-def visit_shortend(key):
-    URL = Url.query.filter_by(shortened_url=str(key)).first()
-    return redirect("http://" + URL.url)
+#holas
+@app.get("/{key}",response_class=RedirectResponse ,status_code=302)
+async def visit_shortend(key: int):
+    URL = await Url.query.filter_by(shortened_url=str(key)).first()
+    return ("http://" + URL.url)
 
-@app.route("/uszip")
-def visit_uszip():
-    zip_code = str(request.args.get("zip"))
+@app.get("/uszip")
+def visit_uszip(zip: int):
+
+    zip_code = zip
     us_zip_regex = "^[0-9]{5}(?:-[0-9]{4})?$"
 
     if search(us_zip_regex, zip_code):
-        return jsonify({
+        return ({
             "type": "zip",
             "country": "us",
             "valid": "true"
         })
-    return jsonify({
+    return ({
             "type": "zip",
             "country": "us",
             "valid": "false"
         })
 
-@app.route("/lbzip")
-def visit_lbzip():
-    zip_code = str(request.args.get("zip"))
+@app.get("/lbzip")
+def visit_lbzip(zip: int):
+
+    zip_code = zip
     us_zip_regex = "^1[0-9]{3}$"
 
     if search(us_zip_regex, zip_code):
-        return jsonify({
+        return ({
             "type": "zip",
             "country": "lb",
             "valid": "true"
         })
-    return jsonify({
+    return {
             "type": "zip",
             "country": "lb",
             "valid": "false"
-        })
+        }
 
 if __name__ == "__main__":
     db.create_all()
