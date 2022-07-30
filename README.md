@@ -22,7 +22,7 @@ respsone = get('domain/route?argument=Your-Input')# Card-Number
 ```python
 from requests import get
 response = get('domain/shorten?url=URL_You_want_to_shorten')
-shortened_code = response.content.key
+shortened_code = response.json()["key"]
 # you  need to convert the response from json
 #you can visit your link by visit domain/shotened_code
 ```
