@@ -10,10 +10,14 @@ import smtplib
 import dns.resolver
 
 
-app = FastAPI(__name__)
-db = SQLAlchemy(app)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///myDB.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+from database import (
+    fetch_url_by_key,
+    fetch_url_by_url,
+    add_url
+)
+
+app = FastAPI()
+
 
 
 def find_best_mx(result):
@@ -28,10 +32,14 @@ def find_best_mx(result):
 
     return mx_records[smallest]
 
+@app.get('/')
+def main():
+    return {'Hello': 'world'}
+
 @app.get('/email')
 async def email_validator(email: str):
     email_regex = "^[a-zA-Z0-9]+[\._]?[a-zA-Z0-9]+[@]\w+[.]\w{2,3}$"
-
+    print(email)
     if search(email_regex, email):
 
         domain_name = email.split('@')[1]
@@ -132,10 +140,10 @@ async def domain_validator(domain: str):
         })
 
 #for internal use only
-async def _domain_validator(domain_name):
-    response = await popen(f"ping {domain_name}").read()
+def _domain_validator(domain_name):
+    response = popen(f"ping {domain_name}")
 
-    if "Received = " in response:
+    if "Received = " in response.read():
         return True
     else:
         return False
@@ -151,7 +159,7 @@ async def ssl_validator(url: str):
         url = url[:-1]
 
  
-    if await _domain_validator(url):
+    if  _domain_validator(url):
         try:
             req = await get("https://" + url)
             
@@ -176,66 +184,50 @@ async def ssl_validator(url: str):
 def generate_random_key():
     return ''.join(choice(ascii_letters + digits) for i in range(8))
 
-async def check_if_exists(url):
-    url = await Url.query.filter_by(shortened_url=url).first()
-    result = url != None
-    return result
+async def check_if_exists(key):
+    result = await fetch_url_by_key(key)
+    return result != None
 
 # model for url shortner
-class Url(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    shortened_url = db.Column(db.String(100), unique=True)
-    url = db.Column(db.String(1000))
+# class Url(db.Model):
+#     id = db.Column(db.Integer, primary_key=True)
+#     shortened_url = db.Column(db.String(100), unique=True)
+#     url = db.Column(db.String(1000))
 
-    def __init__(self, url, shortened):
-        self.url = str(url)
-        self.shortened_url = str(shortened)
+#     def __init__(self, url, shortened):
+#         self.url = str(url)
+#         self.shortened_url = str(shortened)
 
 
-# @app.get("/shorten/<url>/<shortened_version>")
 @app.get("/shorten")
 async def shorten_url(url: str):
 
     http_regex =  "^(http://)"
     https_regex = "^(https://)"
 
-    if search(http_regex, url):
-        url = url[11:]
-    if search(https_regex, url):
-        url = url[12:]
-
-    path_list = list(str(url).split("/"))
-    last_path = path_list[-1]
-    url = ''.join(path_list[:len(path_list) - 1]) if len(path_list) > 1 else ''.join(path_list[:])
-    shortened_version = last_path[2:] if last_path[:2] == "==" else None
-
-    if not  await _domain_validator(url):
+    
+    if not   _domain_validator(url):
         return ({
             "domain": "false",
             "shorten": "false",
             "key": ""
         })
 
-    if shortened_version is not None:
-        shortened_version = str(shortened_version)
-        does_exist = await check_if_exists(shortened_version)
-        if does_exist:
-            return ({
-            "domain": "true",
+    document = await fetch_url_by_url(url)
+    if document != None:
+        return ({
+            "domain": "True",
             "shorten": "false",
-            "key": ""
+            "key": document['key']
         })
-        else:
-            new_url = Url(url, shortened_version)
-            key = shortened_version
-    else:
-        key = generate_random_key()
-        while check_if_exists(key):
-            key = generate_random_key()
-        new_url = Url(url, key)
 
-    await db.session.add(new_url)
-    await db.session.commit()
+    key = generate_random_key()
+
+    while check_if_exists(key):
+        key = generate_random_key()
+
+    await add_url(url,key)
+
     return ({
         "domain": "true",
         "shorten": "true",
@@ -245,7 +237,7 @@ async def shorten_url(url: str):
 #holas
 @app.get("/{key}",response_class=RedirectResponse ,status_code=302)
 async def visit_shortend(key: int):
-    URL = await Url.query.filter_by(shortened_url=str(key)).first()
+    URL = await fetch_url_by_key(key)
     return ("http://" + URL.url)
 
 @app.get("/uszip")
@@ -284,6 +276,3 @@ def visit_lbzip(zip: int):
             "valid": "false"
         }
 
-if __name__ == "__main__":
-    db.create_all()
-    app.run(debug=True)
