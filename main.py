@@ -185,7 +185,7 @@ def generate_random_key():
     return ''.join(choice(ascii_letters + digits) for i in range(8))
 
 async def check_if_exists(key):
-    result = await fetch_url_by_key(key)
+    result = await fetch_url_by_key(key)    
     return result != None
 
 # model for url shortner
@@ -223,7 +223,7 @@ async def shorten_url(url: str):
 
     key = generate_random_key()
 
-    while check_if_exists(key):
+    while await check_if_exists(key):
         key = generate_random_key()
 
     await add_url(url,key)
@@ -236,9 +236,9 @@ async def shorten_url(url: str):
 
 #holas
 @app.get("/{key}",response_class=RedirectResponse ,status_code=302)
-async def visit_shortend(key: int):
+async def visit_shortend(key: str):
     URL = await fetch_url_by_key(key)
-    return ("http://" + URL.url)
+    return ("http://" + URL["url"])
 
 @app.get("/uszip")
 def visit_uszip(zip: int):
