@@ -1,19 +1,21 @@
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse,HTMLResponse
 from re import search
 from os import popen
-from flask_sqlalchemy import SQLAlchemy
 from string import ascii_letters, digits
 from random import choice
 from requests import get
 import smtplib
 import dns.resolver
+import gunicorn
 
 
 from database import (
     fetch_url_by_key,
     fetch_url_by_url,
-    add_url
+    add_url,
+    fetch_api_key,
+    create_api_key
 )
 
 app = FastAPI()
@@ -32,9 +34,11 @@ def find_best_mx(result):
 
     return mx_records[smallest]
 
-@app.get('/')
+@app.get('/',response_class=HTMLResponse)
 def main():
-    return {'Hello': 'world'}
+    return """To visit the shoterned url use the WEBSITE_URL/given_key. 
+              To test the api visit <a href="/docs#/">here</a>.
+              To see API's code visit <a href="https://github.com/Ali-Al-Hadi-Al-Husseini/validation-API" target="_blank">Github</a>"""
 
 @app.get('/email')
 async def email_validator(email: str):
@@ -238,7 +242,11 @@ async def shorten_url(url: str):
 @app.get("/{key}",response_class=RedirectResponse ,status_code=302)
 async def visit_shortend(key: str):
     URL = await fetch_url_by_key(key)
-    return ("http://" + URL["url"])
+    if URL == None:return "Nosychcode"
+    if "https://" in URL['url'] or "http://" in URL['url']:
+        return (URL["url"])
+    else:
+        return "http://" + URL["url"]
 
 @app.get("/uszip")
 def visit_uszip(zip: int):
@@ -276,3 +284,9 @@ def visit_lbzip(zip: int):
             "valid": "false"
         }
 
+
+
+@app.get("/api-key")
+async def give_me_my_key():
+    key = await create_api_key()
+    #To Be Continued
