@@ -314,6 +314,4 @@ async def check_for_key(request, call_next):
     return await call_next(request)
 
 routes = set([route.path for route in app.routes])
-if __name__ == "__main__":
-    routes = set([route.path for route in app.routes])
-    uvicorn.run(app)
+
