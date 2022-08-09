@@ -7,15 +7,16 @@ client = motor.motor_asyncio.AsyncIOMotorClient("mongodb+srv://lilo786:9AQBmtsNj
 db_inited = [False]
 
 async def init_db():
-    await init_beanie(database=client.Urls, document_models=[Url,API_Key])
-    print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
+    await init_beanie(database=client.Urls, document_models=[Url])
+    await init_beanie(database=client.Keys,document_models=[API_Key])
     db_inited[0] = True
 
 
 
 database = client.Urls
+db = client.Keys
 url_collection = database.get_collection('Url')
-API_Key_collection = database.get_collection('API_Key')
+API_Key_collection = db.get_collection('API_Key')
 
 async def fetch_url_by_key(key):
     if not db_inited[0]:await init_db()
@@ -40,12 +41,12 @@ async def create_api_key():
     key = generate_key()
     hashed_key = hashText(key)
 
-    while fetch_api_key(hashed_key) != None:
+    while await fetch_api_key(hashed_key) != None:
         key = generate_key()
         hashed_key = hashText(key)
         
     document = {
-        'key':key
+        'key':hashed_key
     }
     
     await API_Key_collection.insert_one(document)
@@ -53,4 +54,4 @@ async def create_api_key():
 
 async def fetch_api_key(key):
     if not db_inited[0]:await init_db()
-    return await url_collection.find_one({'key':hashText(key)})
+    return await API_Key_collection.find_one({'key':hashText(key)})

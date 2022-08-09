@@ -1,5 +1,6 @@
+from importlib.resources import path
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse,HTMLResponse
+from fastapi.responses import RedirectResponse,HTMLResponse,JSONResponse
 from re import search
 from os import popen
 from string import ascii_letters, digits
@@ -7,7 +8,7 @@ from random import choice
 from requests import get
 import smtplib
 import dns.resolver
-import gunicorn
+import uvicorn
 
 
 from database import (
@@ -41,9 +42,9 @@ def main():
               To see API's code visit <a href="https://github.com/Ali-Al-Hadi-Al-Husseini/validation-API" target="_blank">Github</a>"""
 
 @app.get('/email')
-async def email_validator(email: str):
+async def email_validator(email: str,apiKey:str):
     email_regex = "^[a-zA-Z0-9]+[\._]?[a-zA-Z0-9]+[@]\w+[.]\w{2,3}$"
-    print(email)
+    
     if search(email_regex, email):
 
         domain_name = email.split('@')[1]
@@ -51,7 +52,7 @@ async def email_validator(email: str):
         if _domain_validator(domain_name):
             code = 0
             try:
-                records = await dns.resolver.resolve(domain_name, 'MX')
+                records = dns.resolver.resolve(domain_name, 'MX')
                 mxRecord = records[0].exchange
                 mxRecord = str(mxRecord)
 
@@ -61,11 +62,13 @@ async def email_validator(email: str):
                 fromAddress = 'just_a_place_holder@domain.com'
 
                 # SMTP Conversation
-                await server.connect(mxRecord)
-                await server.helo(server.local_hostname)  ### server.local_hostname(Get local server hostname)
-                await server.mail(fromAddress)
-                code, message = await server.rcpt(str(email))
-                server.quit()
+                for _ in range(10):
+                    server.connect(mxRecord)
+                    server.helo(server.local_hostname)  ### server.local_hostname(Get local server hostname)
+                    server.mail(fromAddress)
+                    code, message = await server.rcpt(str(email))
+                    server.quit()
+                    break
             finally:
 
                 result = "true" if (code == 250) else 'false'
@@ -104,7 +107,7 @@ def sum_of_num(num):
 
 # using luhan algo
 @app.get("/card")
-def card_validator(number: int):
+def card_validator(number: int,apiKey:str):
 
     numbers_list = [int(num) for num in list(str(number))]
     numbers_list.reverse()
@@ -154,7 +157,7 @@ def _domain_validator(domain_name):
 
 
 @app.get("/ssl/")
-async def ssl_validator(url: str):
+async def ssl_validator(url: str,apiKey:str):
 
     ssl_regex = "^(http://)"
     if search(ssl_regex, url):
@@ -204,18 +207,18 @@ async def check_if_exists(key):
 
 
 @app.get("/shorten")
-async def shorten_url(url: str):
+async def shorten_url(url: str,apiKey:str):
 
     http_regex =  "^(http://)"
     https_regex = "^(https://)"
 
     
-    if not   _domain_validator(url):
-        return ({
-            "domain": "false",
-            "shorten": "false",
-            "key": ""
-        })
+    # if not   _domain_validator(url):
+    #     return ({
+    #         "domain": "false",
+    #         "shorten": "false",
+    #         "key": ""
+    #     })
 
     document = await fetch_url_by_url(url)
     if document != None:
@@ -239,17 +242,17 @@ async def shorten_url(url: str):
     })
 
 #holas
-@app.get("/{key}",response_class=RedirectResponse ,status_code=302)
+@app.get("/visit/{key}",response_class=RedirectResponse ,status_code=302)
 async def visit_shortend(key: str):
     URL = await fetch_url_by_key(key)
-    if URL == None:return "Nosychcode"
+    if URL == None:return "No such url path or code"
     if "https://" in URL['url'] or "http://" in URL['url']:
         return (URL["url"])
     else:
         return "http://" + URL["url"]
 
 @app.get("/uszip")
-def visit_uszip(zip: int):
+def visit_uszip(zip: int, apiKey:str):
 
     zip_code = zip
     us_zip_regex = "^[0-9]{5}(?:-[0-9]{4})?$"
@@ -267,7 +270,7 @@ def visit_uszip(zip: int):
         })
 
 @app.get("/lbzip")
-def visit_lbzip(zip: int):
+def visit_lbzip(zip: int,apiKey:str):
 
     zip_code = zip
     us_zip_regex = "^1[0-9]{3}$"
@@ -289,4 +292,28 @@ def visit_lbzip(zip: int):
 @app.get("/api-key")
 async def give_me_my_key():
     key = await create_api_key()
-    #To Be Continued
+    return HTMLResponse(f""" {key} is your API code make sure to save it some because it's only showen once """)
+
+@app.middleware('http')
+async def check_for_key(request, call_next):
+    exceptions = set(['/api-key','/','/docs#'])
+    key = request.query_params.get('apiKey',None)
+
+    if request.url.path not in routes:
+        JSONResponse({'response':"URL Path is not valid"})
+
+    elif request.url.path in exceptions or 'visit' in request.url.path:
+        pass
+
+    elif key == None:
+        return JSONResponse({'response':"You need an api key tp use this api"})
+
+    elif await fetch_api_key(key) == None  : 
+        return JSONResponse({'response':"api-key is not valid"})
+
+    return await call_next(request)
+
+routes = set([route.path for route in app.routes])
+if __name__ == "__main__":
+    routes = set([route.path for route in app.routes])
+    uvicorn.run(app)
