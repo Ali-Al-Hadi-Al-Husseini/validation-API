@@ -1,6 +1,6 @@
 
 # Multi-Task API 
-
+This API has been migrated from flask to fastapi 
 ## General request
 ```python
 from requests import get 
